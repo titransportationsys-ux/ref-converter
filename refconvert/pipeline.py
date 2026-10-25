@@ -114,46 +114,60 @@ def rebuild(work: Work) -> dict:
     return review
 
 
+def _make_resolution(work: Work, flags: dict, fid: str, action: str, engine, text, rows, note: str, by: str) -> dict:
+    if action not in ("accept", "override", "waive", "drop"):
+        raise ExtractError("action must be accept, override, waive or drop")
+    if action in ("override", "waive", "drop") and not (note or "").strip():
+        raise ExtractError(f"a --note explaining the {action} is required (it goes into the audit trail)")
+    if not (by or "").strip():
+        raise ExtractError("--by is required (who decided: a person's name, or ref-verifier)")
+    f = flags.get(fid)
+    if f is None:
+        raise ExtractError(f"no flag {fid}. Run 'status' to list flag ids.")
+    if f["severity"] == "INFO":
+        raise ExtractError(f"{fid} is informational and needs no resolution")
+    is_table = bool(f["tid"]) and not f["tid"].startswith("eq:")
+    r = {"flag": fid, "fp": f["fp"], "code": f["code"], "unit": f["unit"], "action": action, "note": note, "by": by, "at": now()}
+    if action == "drop" and not is_table:
+        raise ExtractError("drop only applies to table flags (an extracted 'table' that is not a table)")
+    if action == "accept":
+        if not engine:
+            raise ExtractError("--accept needs an engine name")
+        eng = next((e for e in work.engines() if e.engine == engine), None)
+        if eng is None:
+            raise ExtractError(f"engine '{engine}' does not exist in this work folder (have: {', '.join(work.manifest()['engine_order'])})")
+        want = "table" if is_table else "text"
+        if not any(b.unit == f["unit"] and b.kind == want and (want == "text" or b.tid == f["tid"]) for b in eng.blocks):
+            raise ExtractError(f"engine '{engine}' has no {want} for unit {f['unit']}" + (f" table {f['tid']}" if want == "table" else "") + ": cannot accept it")
+        if want == "text" and not any(b.text.strip() for b in eng.blocks if b.unit == f["unit"] and b.kind == "text"):
+            raise ExtractError(f"engine '{engine}' has no text for {f['unit']}: cannot accept an empty reading")
+        r["engine"] = engine
+    elif action == "override":
+        if is_table:
+            if rows is None:
+                raise ExtractError("table flags need rows (JSON list of rows) for an override")
+            r["rows"] = rows
+        else:
+            if text is None:
+                raise ExtractError("text flags need --text for an override")
+            r["text"] = text
+    return r
+
+
+def resolve_batch(work: Work, items: list[dict]) -> list[str]:
+    """items: [{flag, action, engine?, text?, rows?, note, by}]. All validated first, written together, ONE rebuild."""
+    flags = {f["id"]: f for f in work.review()["flags"]}
+    made = [_make_resolution(work, flags, it["flag"], it["action"], it.get("engine"), it.get("text"), it.get("rows"), it.get("note", ""), it.get("by", ""))
+            for it in items]
+    rs = {r["flag"]: r for r in work.resolutions()}
+    rs.update({r["flag"]: r for r in made})
+    work._write(work.resolutions_path, list(rs.values()))
+    rebuild(work)
+    return [r["flag"] for r in made]
+
+
 def resolve(work: Work, flag_ids: list[str], action: str, engine: str | None, text: str | None,
             rows_file: Path | None, note: str, by: str) -> list[str]:
-    review = work.review()
-    flags = {f["id"]: f for f in review["flags"]}
-    if action not in ("accept", "override", "waive"):
-        raise ExtractError("action must be accept, override or waive")
-    if action in ("override", "waive") and not note.strip():
-        raise ExtractError(f"a --note explaining the {action} is required (it goes into the audit trail)")
-    if not by.strip():
-        raise ExtractError("--by is required (who decided: a person's name, or ref-verifier)")
-    done = []
-    for fid in flag_ids:
-        f = flags.get(fid)
-        if f is None:
-            raise ExtractError(f"no flag {fid}. Run 'status' to list flag ids.")
-        if f["severity"] == "INFO":
-            raise ExtractError(f"{fid} is informational and needs no resolution")
-        r = {"flag": fid, "fp": f["fp"], "code": f["code"], "unit": f["unit"], "action": action, "note": note, "by": by, "at": now()}
-        if action == "accept":
-            if not engine:
-                raise ExtractError("--accept needs an engine name")
-            eng = next((e for e in work.engines() if e.engine == engine), None)
-            if eng is None:
-                raise ExtractError(f"engine '{engine}' does not exist in this work folder (have: {', '.join(work.manifest()['engine_order'])})")
-            want = "table" if f["tid"] and not f["tid"].startswith("eq:") else "text"
-            if not any(b.unit == f["unit"] and b.kind == want and (want == "text" or b.tid == f["tid"]) for b in eng.blocks):
-                raise ExtractError(f"engine '{engine}' has no {want} for unit {f['unit']}" + (f" table {f['tid']}" if want == "table" else "") + ": cannot accept it")
-            if want == "text" and not any(b.text.strip() for b in eng.blocks if b.unit == f["unit"] and b.kind == "text"):
-                raise ExtractError(f"engine '{engine}' has no text for {f['unit']}: cannot accept an empty reading")
-            r["engine"] = engine
-        elif action == "override":
-            if f["tid"] and not f["tid"].startswith("eq:"):
-                if not rows_file:
-                    raise ExtractError("table flags need --rows-file (JSON list of rows) for an override")
-                r["rows"] = json.loads(Path(rows_file).read_text(encoding="utf-8"))
-            else:
-                if text is None:
-                    raise ExtractError("text flags need --text for an override")
-                r["text"] = text
-        work.add_resolution(r)
-        done.append(fid)
-    rebuild(work)
-    return done
+    rows = json.loads(Path(rows_file).read_text(encoding="utf-8")) if rows_file else None
+    return resolve_batch(work, [{"flag": fid, "action": action, "engine": engine, "text": text, "rows": rows, "note": note, "by": by}
+                                for fid in flag_ids])

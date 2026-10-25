@@ -145,3 +145,15 @@ def test_dropped_label_column_cannot_pass_the_line_layout_check():
     assert not _rows_in_lines([["7", "7", "7"], ["10", "10", "9"]], page)               # label column lost
     assert not _rows_in_lines([["Level", "7"], ["Rolling", "10"]], page)               # trailing column lost
     assert not _rows_in_lines([["Level", "7", "7", "7"], ["Rolling", "10", "10", "9"]], "Level 7 7 7 40 50\nRolling 10 10 9 30 40")  # neighbour table
+
+
+def test_batch_resolve_is_all_or_nothing_and_drop_removes_a_false_table(make):
+    _, w = make("pdf", pages=[{"lines": ["Radius 230 m"], "table": [["A", "B"], ["1", "2"], ["3", "4"]], "skew": True}])
+    (flag,) = [f for f in w.review()["flags"] if f["code"] == "TABLE_STRUCTURE"]
+    with pytest.raises(ExtractError, match="--note"):
+        pipeline.resolve_batch(w, [{"flag": flag["id"], "action": "drop", "note": "", "by": "me"}])
+    assert not w.resolutions_path.exists() or json.loads(w.resolutions_path.read_text()) == []      # nothing was written
+    pipeline.resolve_batch(w, [{"flag": flag["id"], "action": "drop", "note": "figure, not a table", "by": "me"}])
+    assert codes(w, "open", "BLOCK") == []
+    assert not [b for b in w.merged()["units"][0]["blocks"] if b["kind"] == "table"]
+    assert "Radius 230 m" in w.merged()["units"][0]["blocks"][0]["text"]               # page text untouched

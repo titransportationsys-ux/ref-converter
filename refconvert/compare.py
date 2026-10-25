@@ -349,6 +349,8 @@ def _apply_table_res(r, cands, default, merged_tables, tid, u):
             if e.engine == r.get("engine"):
                 return (e, b)
         return default
+    if r["action"] == "drop":
+        return None                              # the extractor saw a 'table' that is not one: leave it out (page text stays)
     if r["action"] == "override":
         class _H:                            # tiny stand-in engine for human-supplied rows
             engine = "human"
