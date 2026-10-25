@@ -172,3 +172,15 @@ def test_subscript_digits_and_thousands_separators(tmp_path):
     assert equations._strip_subscripts("S_1 = h_PI(R_PI)/5729.58 and e\u2081 + f_12") == "S = h_PI(R_PI)/5729.58 and e + f"
     assert equations._strip_subscripts("x_1.5") == "x_1.5"          # a decimal after an underscore is not a subscript
     assert equations._floats(["1,350", "+0.10", "12,5"]) == {1350.0, 0.1}     # '12,5' is a decimal comma: left unparsed
+
+
+def test_named_correction_of_a_printed_constant(tmp_path):
+    src = tmp_path / "typo.md"
+    src.write_text(SRC.replace("SSD = 0.278Vt", "SSD = 0.287Vt"), encoding="utf-8")      # the book prints a typo
+    w = pipeline.extract(src, tmp_path / "w_typo")
+    spec = SPEC.replace("0.278Vt", "0.287Vt").replace("    ignore_source_numbers", "    correction: {printed: 0.287, used: 0.278, reason: the printed example needs 0.278, by: user}\n    ignore_source_numbers")
+    set_spec(w, spec)
+    assert codes(w, "open", "BLOCK") == []
+    assert "EQ_CORRECTED" in codes(w, None, "INFO")
+    set_spec(w, spec.replace(", by: user", ""))                                             # a correction nobody owns is refused
+    assert "EQ_CORRECTION_INVALID" in codes(w, "open", "BLOCK")

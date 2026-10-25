@@ -185,6 +185,22 @@ def check(spec: dict, unit_text: dict, add):
         const_vals = {float(c.get("value")) for c in consts.values() if isinstance(c, dict) and "value" in c}
         implicit = {float(x) for x in eq.get("implicit_literals") or []}
         ignore = {float(x) for x in eq.get("ignore_source_numbers") or []}
+        corr = eq.get("correction") or {}
+        if corr:
+            try:
+                printed, used = float(corr["printed"]), float(corr["used"])
+            except (KeyError, TypeError, ValueError):
+                printed = used = None
+            if printed is None or not str(corr.get("reason", "")).strip() or not str(corr.get("by", "")).strip():
+                bad("EQ_CORRECTION_INVALID", "correction needs printed, used, reason and by (who decided)")
+                ok = False
+            elif not _near(printed, src_nums) or not _near(used, set(lits)):
+                bad("EQ_CORRECTION_INVALID", f"correction says printed {corr['printed']} -> used {corr['used']}, but source_text/expr do not contain those numbers")
+                ok = False
+            else:
+                implicit.add(used)
+                ignore.add(printed)
+                bad("EQ_CORRECTED", f"printed {corr['printed']} is replaced by {corr['used']} (decided by {corr['by']}): {corr['reason']}", "INFO")
         extra_lit = {x for x in lits if not _near(x, src_nums | implicit | const_vals)}
         extra_src = {x for x in src_nums if not _near(x, set(lits) | ignore | const_vals)}
         if extra_lit or extra_src:

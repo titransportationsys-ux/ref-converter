@@ -115,6 +115,8 @@ def to_markdown(work: Work, review: dict) -> str:
             lab = next((u["label"] for u in mg["units"] if u["unit"] == eq.get("unit")), eq.get("unit"))
             out += [f"### {eq['name']}" + ("  (UNVERIFIED)" if eq.get("status") == "unverified" else ""), "",
                     f"- Expression: `{eq['expr']}`", f"- Printed as: {eq.get('source_text', '')}",
+                    *([f"- CORRECTION (decided by {eq['correction'].get('by')}): printed {eq['correction'].get('printed')}, used {eq['correction'].get('used')}. {eq['correction'].get('reason')}"] if eq.get("correction") else []),
+                    *([f"- Note: {eq['notes']}"] if eq.get("notes") else []),
                     f"- Result unit: {(eq.get('result') or {}).get('unit', '')}", "", "| Variable | Unit | Min | Max |", "|---|---|---|---|"]
             for v, d in (eq.get("vars") or {}).items():
                 d = d or {}
@@ -235,6 +237,11 @@ def emit_code(work: Work, review: dict, out: Path, force: bool) -> list[Path]:
         lab = next((u["label"] for u in mg["units"] if u["unit"] == eq["unit"]), eq["unit"])
         doc = [f'    """{eq.get("source_text", "").replace(chr(92), chr(92) * 2).replace(chr(34) * 3, chr(39) * 3)}', "",
                f"    Source: {lab} of {m['source_name']}." + ("  UNVERIFIED." if eq.get("status") == "unverified" else "")]
+        if eq.get("correction"):
+            c = eq["correction"]
+            doc += [f"    CORRECTION (decided by {c.get('by')}): printed {c.get('printed')}, used {c.get('used')}. {c.get('reason')}".replace(chr(92), chr(92) * 2).replace(chr(34) * 3, chr(39) * 3)]
+        if eq.get("notes"):
+            doc += [f"    Note: {eq['notes']}".replace(chr(92), chr(92) * 2).replace(chr(34) * 3, chr(39) * 3)]
         for v, d in (eq.get("vars") or {}).items():
             d = d or {}
             doc.append(f"    {v}: [{d.get('unit', '')}]" + (f" valid {d.get('min')}..{d.get('max')}" if "min" in d or "max" in d else ""))
