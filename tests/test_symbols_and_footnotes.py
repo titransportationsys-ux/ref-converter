@@ -100,3 +100,12 @@ def test_page_text_with_tables_is_labelled_as_a_raw_reading(make, tmp_path):
     units = json.loads(next(out.glob("*.json")).read_text(encoding="utf-8"))["units"]
     assert "note" in units[0] and "note" not in units[1]
     assert verify.run(w, out)["status"] == "PASS"
+
+
+def test_rotated_margin_watermark_never_leaks_into_footnotes(make):
+    water = "BT /F1 8 Tf 0 1 -1 0 575 340 Tm (Distributed by Clarivate Analytics \\(US\\) LLC) Tj ET"
+    _, w = make("pdf", pages=[{"lines": ["Table 6-5 widths"], "table": TABLE, "raw": FOOT + " " + water}])
+    tb = next(b for b in w.merged()["units"][0]["blocks"] if b["kind"] == "table")
+    for f in tb["meta"]["footnotes"]:
+        assert "Clarivate" not in f["text"] and "Distributed" not in f["text"], f
+    assert tb["meta"]["footnotes"][1]["text"] == "Consider 24 ft where trucks are present."

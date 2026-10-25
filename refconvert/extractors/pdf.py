@@ -141,7 +141,8 @@ def _plumber(path: Path, first: int, last: int | None) -> EngineResult:
                     meta = {}
                     marks = sorted({m for r in rows for c in r for m in re.findall(r"\^([A-Za-z0-9*]{1,3})", c)})
                     if marks:
-                        lines = lines if lines is not None else page.extract_text_lines()
+                        lines = lines if lines is not None else page.filter(
+                            lambda o: o.get("object_type") != "char" or o.get("upright", True)).extract_text_lines()   # ignore rotated margin text (watermarks)
                         fn = _legends(lines, tb.bbox, marks)
                         if fn:
                             meta["footnotes"] = fn
