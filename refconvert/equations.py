@@ -95,9 +95,22 @@ def load_spec(path):
     return spec
 
 
+_SUBSCRIPT = re.compile(r"_\d+(?![.\d])|[\u2080-\u2089]")
+
+
+def _strip_subscripts(s: str) -> str:
+    """Subscript digits (S_1, h\u2082) are names, not numbers: remove them before comparing printed numbers with the expression."""
+    return _SUBSCRIPT.sub("", s)
+
+
+_THOUSANDS = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?")
+
+
 def _floats(counter) -> set:
     out = set()
     for t in counter:
+        # '1,350' printed with a thousands separator is 1350; other commas (decimal comma) are left alone
+        t = t.replace(",", "") if _THOUSANDS.fullmatch(t.lstrip("+-")) else t
         try:
             out.add(float(t))
         except ValueError:
@@ -168,7 +181,7 @@ def check(spec: dict, unit_text: dict, add):
                     "source_text is not found verbatim in the extracted text (equations are often mangled in PDFs). "
                     "Confirm it visually against the page; use two blind transcriptions for scanned sources.", "WARN")
         # literals in the expression must be exactly what is printed
-        src_nums = _floats(numbers(src))
+        src_nums = _floats(numbers(_strip_subscripts(src)))
         const_vals = {float(c.get("value")) for c in consts.values() if isinstance(c, dict) and "value" in c}
         implicit = {float(x) for x in eq.get("implicit_literals") or []}
         ignore = {float(x) for x in eq.get("ignore_source_numbers") or []}

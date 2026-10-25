@@ -166,3 +166,9 @@ def test_unverified_emit_carries_a_loud_banner(tmp_path):
     review = emit.guard(w, True)
     txt = emit.emit_md(w, review, tmp_path / "o", False).read_text(encoding="utf-8")
     assert "UNVERIFIED OUTPUT" in txt and "status: UNVERIFIED" in txt
+
+
+def test_subscript_digits_and_thousands_separators(tmp_path):
+    assert equations._strip_subscripts("S_1 = h_PI(R_PI)/5729.58 and e\u2081 + f_12") == "S = h_PI(R_PI)/5729.58 and e + f"
+    assert equations._strip_subscripts("x_1.5") == "x_1.5"          # a decimal after an underscore is not a subscript
+    assert equations._floats(["1,350", "+0.10", "12,5"]) == {1350.0, 0.1}     # '12,5' is a decimal comma: left unparsed
