@@ -201,5 +201,5 @@ def test_pdf_page_range_keeps_original_page_numbers(tmp_path):
     assert "radius 103 m" in w.merged()["units"][0]["blocks"][0]["text"]
     assert w.manifest()["pages"] == [3, 4]
     assert codes(w, "open", "BLOCK") == []
-    with pytest.raises(ExtractError, match="only applies"):
+    with pytest.raises(ExtractError, match="only apply"):
         pipeline.extract(F.make_text(tmp_path / "t.md"), tmp_path / "w2", pages=(1, 2))

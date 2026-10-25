@@ -36,6 +36,7 @@ def run(merged: dict, book, sanity_path=None):
                          f"table {b['tid']} rows have different lengths ({sorted({len(r) for r in b['rows']})}): merged/row-spanned cells make "
                          "column positions ambiguous. Check against the original before using it as a grid.", b["tid"])
     link_footnotes(merged, book)
+    suggest_boilerplate(merged, book)
     for u, t in texts.items():
         m = INJECTION.search(t)
         if m:
@@ -85,3 +86,19 @@ def link_footnotes(merged: dict, book):
             if missing:
                 book.add("FOOTNOTE_NOT_FOUND", "WARN", un["unit"],
                          f"table {b['tid']} has footnote mark(s) {', '.join('^' + m for m in missing)} but no legend text was found directly below the table. Check the page.", b["tid"])
+
+
+def suggest_boilerplate(merged: dict, book):
+    """INFO only: long lines that repeat on most pages (licence stamps, running headers). Never removed automatically."""
+    pages = [u for u in merged["units"] if any(b["kind"] == "text" and b["text"].strip() for b in u["blocks"])]
+    if len(pages) < 5:
+        return
+    from collections import Counter
+    c = Counter()
+    for u in pages:
+        seen = {cmp_text(ln) for b in u["blocks"] if b["kind"] == "text" for ln in b["text"].split("\n") if len(ln.strip()) >= 25}
+        c.update(seen)
+    rep = [(ln, n) for ln, n in c.most_common(6) if n >= max(4, int(0.8 * len(pages)))]
+    if rep:
+        book.add("BOILERPLATE_CANDIDATE", "INFO", "", "line(s) repeated on most pages (consider --strip-regex if it is not part of the reference): " +
+                 " || ".join(f"'{ln[:70]}' x{n}/{len(pages)}" for ln, n in rep))

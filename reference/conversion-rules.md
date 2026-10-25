@@ -60,7 +60,13 @@ The single source of truth for how `refconvert` decides. If code and this file d
 - A table seen by one engine with no page text to compare: `SINGLE_SOURCE_TABLE` (BLOCK).
 
 ### 4.3 PDF table structure
-Accepted without a human only if every non-empty row's cells appear **in order on one line** of another engine's text, and rows appear top to bottom. Wrapped cells, rotated headers and merged cells fail this on purpose and go to a human or the verifier.
+Accepted without a human only if every non-empty row **equals one whole line** of another engine's text (cells joined by single spaces, nothing before, between or after) and rows appear top to bottom. A dropped label column, a side-by-side neighbour table, wrapped, rotated or merged cells fail this on purpose and go to a human or the verifier. A hand-typed table override must consist of numbers printed on the page (`TABLE_OVERRIDE_NUMBERS`).
+
+### 4.3b PDF symbols, superscripts, footnotes, boilerplate
+- Characters in symbol fonts (Wingdings, Webdings, ZapfDingbats) are mapped by FONT AND CODE from a verified table (Wingdings `y` = bullet, checked on the AASHTO page image). Unknown glyphs are kept as `[symbol:font:U+XXXX]` and warned (`SYMBOL_UNKNOWN`).
+- A character that is smaller than the previous one and raised above its baseline is a superscript and is written `^x`. A superscript digit directly after a digit blocks (`SUPERSCRIPT_DIGIT`).
+- A footnote is the nearest legend line directly below its table (upright text only), attached to every table whose cells carry its mark; a mark without a legend warns (`FOOTNOTE_NOT_FOUND`).
+- `--pages A-B` converts only those physical PDF pages (unit keys keep the original numbers). `--strip-regex` removes declared boilerplate from every engine's page text; each removal is logged and an unmatched pattern warns (`STRIP_NO_MATCH`). Lines repeated on most pages are only suggested (`BOILERPLATE_CANDIDATE`).
 
 ### 4.4 Equations
 All must hold, else the listed flag (BLOCK unless noted):

@@ -169,7 +169,32 @@ def _pdftotext(path: Path, first: int, last: int | None) -> EngineResult:
     return er
 
 
-def extract(path: Path, kind: str, pages=None):
+def _strip(engines, patterns, issues):
+    """Remove user-declared boilerplate (e.g. a licence watermark) from every engine's page text, identically, and log it."""
+    comps = [re.compile(p, re.S | re.I) for p in patterns]
+    total = [0] * len(comps)
+    seen: dict = {}
+    for er in engines:
+        for b in er.blocks:
+            if b.kind != "text":
+                continue
+            for i, rx in enumerate(comps):
+                m = rx.search(b.text)
+                if not m:
+                    continue
+                b.text, n = rx.subn("", b.text)
+                b.text = clean(re.sub(r"\n{3,}", "\n\n", b.text))
+                total[i] += n
+                seen.setdefault((b.unit, i), (n, m.group(0)))
+                er.notes.append({"code": "BOILERPLATE_STRIPPED", "severity": "INFO", "unit": b.unit,
+                                 "detail": f"[{er.engine}] pattern #{i + 1} removed {n} time(s): '{' '.join(m.group(0).split())[:110]}'"})
+    for i, (pat, n) in enumerate(zip(patterns, total)):
+        if n == 0:
+            issues.append({"code": "STRIP_NO_MATCH", "severity": "WARN", "unit": "",
+                           "detail": f"--strip-regex pattern #{i + 1} matched nothing in any engine: {pat[:100]!r}"})
+
+
+def extract(path: Path, kind: str, pages=None, strip=None):
     first, last = pages if pages else (1, None)
     engines, issues = [], []
     for name, fn in (("pdfplumber", _plumber), ("pypdf", _pypdf), ("pdftotext", _pdftotext)):
@@ -183,4 +208,6 @@ def extract(path: Path, kind: str, pages=None):
             issues.append(unavailable(name, str(e)[:200]))
     if not engines:
         raise ExtractError("no PDF engine could read this file (corrupt or not a real PDF)")
+    if strip:
+        _strip(engines, strip, issues)
     return engines, issues

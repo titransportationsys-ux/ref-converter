@@ -16,6 +16,7 @@ Open this folder in Claude Code and say, for example: *"Convert `AASHTO_ch3.pdf`
 ```bash
 python3 -m refconvert extract FILE --work refwork/name     # read with 2+ engines, build flags
 python3 -m refconvert status refwork/name                  # what needs a decision, and how
+python3 -m refconvert extract BOOK.pdf --pages 536-562 --strip-regex "licence stamp regex" --work refwork/ch6   # a chapter of a big PDF
 python3 -m refconvert ingest refwork/name --engine vision-A A.yaml   # add a transcription (scans/images)
 python3 -m refconvert resolve refwork/name --flag ID --accept pdfplumber --by "Yarah-B" --note "checked vs page"
 python3 -m refconvert build refwork/name                   # re-run after editing equations.yaml / sanity.yaml
@@ -29,7 +30,7 @@ Exit codes: 0 ok, 1 error, 2 decisions needed, 3 unsupported format (message say
 ## Layout
 - `refconvert/` the package; `reference/conversion-rules.md` the rule book (thresholds, flags, formats).
 - `skill/SKILL.md` master skill (copied to `.claude/skills/reference-converter/`); `.claude/agents/` the two agents.
-- `tests/` 69 tests incl. real files in every format; `python3 -m pytest -q`.
+- `tests/` 83 tests incl. real files in every format; `python3 -m pytest -q`.
 - `refwork/` working folders (git-ignored): engines, flags, resolutions, equations, merged data.
 
 ## What it does not do

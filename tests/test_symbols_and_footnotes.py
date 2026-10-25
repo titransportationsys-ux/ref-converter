@@ -109,3 +109,38 @@ def test_rotated_margin_watermark_never_leaks_into_footnotes(make):
     for f in tb["meta"]["footnotes"]:
         assert "Clarivate" not in f["text"] and "Distributed" not in f["text"], f
     assert tb["meta"]["footnotes"][1]["text"] == "Consider 24 ft where trucks are present."
+
+
+STAMP = "Licensed to J. DOE on 2018-10-15 for personal use only. Do not copy."
+
+
+def _stamped_pages():
+    return [{"lines": [f"Radius table {n}", "The minimum radius is 230 m.", STAMP]} for n in range(1, 4)]
+
+
+def test_strip_regex_removes_boilerplate_from_every_engine_and_logs_it(tmp_path):
+    src = F.make_pdf(tmp_path / "b.pdf", _stamped_pages())
+    w = pipeline.extract(src, tmp_path / "w", strip=[r"Licensed\s+to\s+.{1,60}?\s+Do\s+not\s+copy\."])
+    for e in w.engines():
+        assert all("2018" not in b.text and "Licensed" not in b.text for b in e.blocks if b.kind == "text"), e.engine
+    assert "230 m" in w.merged()["units"][0]["blocks"][0]["text"]
+    logged = [f for f in w.review()["flags"] if f["code"] == "BOILERPLATE_STRIPPED"]
+    assert len(logged) >= 9 and "2018-10-15" in logged[0]["detail"]          # 3 engines x 3 pages, with a sample of what went
+    assert w.manifest()["strip_patterns"]
+    assert codes(w, "open", "BLOCK") == []
+
+
+def test_unmatched_strip_pattern_warns_and_unstripped_stamp_is_suggested(tmp_path):
+    src = F.make_pdf(tmp_path / "b.pdf", _stamped_pages() + _stamped_pages()[:2])
+    w = pipeline.extract(src, tmp_path / "w", strip=[r"this text is not there"])
+    assert "STRIP_NO_MATCH" in codes(w, "open", "WARN")
+    w2 = pipeline.extract(src, tmp_path / "w2")
+    cand = [f for f in w2.review()["flags"] if f["code"] == "BOILERPLATE_CANDIDATE"]
+    assert cand and "Licensed to J. DOE" in cand[0]["detail"]
+
+
+def test_strip_regex_is_pdf_only(tmp_path):
+    import pytest
+    from refconvert.model import ExtractError
+    with pytest.raises(ExtractError, match="only apply to PDF"):
+        pipeline.extract(F.make_text(tmp_path / "t.md"), tmp_path / "w", strip=["x"])

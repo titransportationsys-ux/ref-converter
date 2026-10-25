@@ -116,7 +116,7 @@ def unavailable(name: str, why: str) -> dict:
     return {"code": "ENGINE_UNAVAILABLE", "severity": "INFO", "unit": "", "detail": f"engine '{name}' skipped: {why}"}
 
 
-def extract(path: Path, workdir: Path, pages=None):
+def extract(path: Path, workdir: Path, pages=None, strip=None):
     """Dispatch to the right extractor. Returns (kind, engines, issues, derived_from)."""
     path = path.resolve()
     kind = detect(path)
@@ -128,7 +128,7 @@ def extract(path: Path, workdir: Path, pages=None):
     from . import pdf, office, web, tabular, text, citations, cad, data, image
     mod = {"pdf": pdf, "docx": office, "pptx": office, "xlsx": office, "html": web, "csv": tabular,
            "text": text, "bib": citations, "ris": citations, "dxf": cad, "json": data, "image": image}[kind]
-    if pages and kind != "pdf":
-        raise ExtractError("--pages only applies to PDF files")
-    engines, issues = mod.extract(path, kind, pages) if kind == "pdf" else mod.extract(path, kind)
+    if (pages or strip) and kind != "pdf":
+        raise ExtractError("--pages and --strip-regex only apply to PDF files")
+    engines, issues = mod.extract(path, kind, pages, strip) if kind == "pdf" else mod.extract(path, kind)
     return kind, engines, issues, derived, path

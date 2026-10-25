@@ -31,6 +31,8 @@ Run everything from the project root: `python3 -m refconvert <command>`.
 
 1. **Inspect and extract**
    `python3 -m refconvert extract FILE --work refwork/<name>` (or `batch FOLDER_OR_ZIP`).
+   Large PDF books: convert a chapter at a time with `--pages 536-562` (physical PDF pages; citations keep those numbers).
+   Licence stamps or other boilerplate on every page: `--strip-regex "..."` (repeatable, PDF only). It is applied to every engine, every removal is logged (BOILERPLATE_STRIPPED, with a sample), and a pattern that matches nothing warns. Look at `BOILERPLATE_CANDIDATE` in `status --all` for lines that repeat on most pages; never remove text silently.
    Unsupported formats (DWG, SHP, audio/video, unknown binaries) exit with code 3 and tell the user how to export them (e.g. DWG to ASCII DXF). Legacy `.doc/.xls/.ppt` are converted with LibreOffice when installed.
    For a **URL**: save the page first (Defuddle/WebFetch to a local `.md` or `.html`), then extract the saved file.
 2. **Read the summary.** Exit code 0 means no blocking flags; 2 means decisions are needed.
@@ -62,6 +64,8 @@ Flags: `BLOCK` must be resolved before emit; `WARN` is shown in the output; `INF
 
 - `verify` PASS proves the files contain what the engines agreed on, **not** that the engines read the page correctly. That is the verifier agent's job, using the original.
 - Figures, charts and diagrams are **not** converted (flag `FIGURE_PRESENT`). Ask the user before analysing them.
+- Symbol-font bullets (Wingdings) become `- • text`; superscript footnote marks are written `20^a`; footnote text is attached to the table whose cells carry the mark (nearest legend below the table). A superscript digit right after a digit (10^3 vs 103) blocks until a person decides. Unknown symbol glyphs are labelled and warned, never guessed.
+- On pages with structured tables the raw page text may show table text interleaved; the Markdown labels it "Raw page reading" and the structured table is the authority.
 - Right-to-left (Arabic) PDFs often extract in reversed order; engines may disagree. Arabic-Indic digits are folded to ASCII only for comparison; the output keeps what the source printed.
 - Excel dates are exported as serial numbers (flag `DATE_CELLS`). Hidden sheets, tracked changes, footnotes/headers and speaker notes are flagged, not silently included.
 - DOCX is compared per document and PDF per page. A paragraph-level error inside a long page is caught by the number and text-similarity checks, not located to the line.
