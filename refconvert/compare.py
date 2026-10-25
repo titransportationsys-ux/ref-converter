@@ -112,7 +112,7 @@ def _rows_in_lines(rows, text) -> bool:
         if not cells:
             continue
         seen += 1
-        target = " ".join(cells)
+        target = " ".join(cells).replace("^", "")           # other engines print a superscript mark inline
         for i in range(ptr, len(lines)):
             if lines[i] == target:
                 ptr = i + 1

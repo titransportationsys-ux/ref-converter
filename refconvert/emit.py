@@ -69,8 +69,8 @@ def _text_md(b: dict) -> list[str]:
         return ["#" * min(n + 1, 6) + " " + txt.replace("\n", " "), ""]
     if not txt.strip():
         return []
-    lines = txt.split("\n")
-    return ["  \n".join(lines) if len(lines) > 1 else txt, ""]
+    lines = [re.sub(r"^\u2022\s*", "- \u2022 ", ln) for ln in txt.split("\n")]    # symbol-font bullet -> list item that keeps the glyph
+    return ["  \n".join(lines) if len(lines) > 1 else lines[0], ""]
 
 
 def to_markdown(work: Work, review: dict) -> str:
@@ -98,6 +98,9 @@ def to_markdown(work: Work, review: dict) -> str:
             else:
                 out += [f"<!-- table: {un['unit']}.{b['tid']} -->", f"**Table {b['tid'][1:]}**", ""]
                 out += _table_md(b["rows"]) + [""]
+                if (b.get("meta") or {}).get("footnotes"):
+                    out += ["Footnotes (as printed under the table):", ""]
+                    out += [f"- ^{f['mark']} {f['text']}" for f in b["meta"]["footnotes"]] + [""]
         out += [f"[src: {un['label']}]", ""]
     if mg.get("equations"):
         out += ["<!-- equations -->", "## Equations", ""]
@@ -160,6 +163,12 @@ def emit_csv(work: Work, out: Path, force: bool) -> list[Path]:
             with open(fn, "w", encoding="utf-8", newline="") as f:
                 csv.writer(f, lineterminator="\n").writerows([[machine_cell(c) for c in r] for r in b["rows"]])
             written.append(fn)
+            fns = (b.get("meta") or {}).get("footnotes") or []
+            if fns:
+                fp = fn.with_name(fn.stem + ".footnotes.csv")
+                with open(fp, "w", encoding="utf-8", newline="") as f:
+                    csv.writer(f, lineterminator="\n").writerows([["mark", "text"]] + [[x["mark"], x["text"]] for x in fns])
+                written.append(fp)
             index.append([fn.name, un["unit"], b["tid"], len(b["rows"]), max((len(r) for r in b["rows"]), default=0),
                           un["status"], (b.get("meta") or {}).get("engine", "")])
     if written:
@@ -176,7 +185,8 @@ def emit_json(work: Work, review: dict, out: Path, force: bool) -> Path:
            "engines": mg["engines"], "units": [
                {"unit": u["unit"], "citation": u["label"], "status": u["status"], "engine": u["engine"],
                 "blocks": [{"kind": b["kind"], "text": b["text"]} if b["kind"] == "text" else
-                           {"kind": "table", "id": b["tid"], "rows": [[machine_cell(c) for c in r] for r in b["rows"]]}
+                           {"kind": "table", "id": b["tid"], "rows": [[machine_cell(c) for c in r] for r in b["rows"]],
+                            "footnotes": (b.get("meta") or {}).get("footnotes", [])}
                            for b in u["blocks"]]} for u in mg["units"]],
            "equations": mg.get("equations", []), "constants": mg.get("consts", {}),
            "decisions": [f["resolution"] for f in review["flags"] if f["status"] == "resolved"]}

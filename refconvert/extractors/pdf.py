@@ -8,6 +8,57 @@ from pathlib import Path
 from ..model import Block, EngineResult, ExtractError, clean
 from . import unavailable
 
+# Symbol fonts: the character CODE is a glyph index, not a letter. Only codes verified against a rendered page are mapped.
+SYMBOL_FONTS = ("wingdings", "webdings", "zapfdingbats")
+SYMBOL_MAP = {("wingdings", "y"): "\u2022"}      # AASHTO Green Book list bullet; checked against the page image
+
+
+def _mark_chars(page, unit, er):
+    """Rewrite pdfplumber chars in place BEFORE text/table extraction:
+    * symbol-font glyphs become the real symbol (bullet) or a labelled marker + warning;
+    * superscripts (smaller AND raised vs the previous char) get a '^' so '20a' is written '20^a'.
+    Digit-after-digit superscripts (10^3 vs 103) are blocked for a human, because other engines read them as one number."""
+    n_sym, n_sup, unknown = 0, 0, set()
+    prev, prev_sup = None, False
+    for c in page.chars:
+        t = c.get("text", "")
+        low = (c.get("fontname") or "").lower()
+        fam = next((f for f in SYMBOL_FONTS if f in low), None)
+        if fam:
+            rep = SYMBOL_MAP.get((fam, t))
+            if rep:
+                n_sym += 1
+                c["text"] = rep
+            else:
+                unknown.add((fam, t))
+                c["text"] = f"[symbol:{fam}:U+{ord(t[0]):04X}]" if t else t
+            prev, prev_sup = c, False
+            continue
+        is_sup = False
+        if prev is not None and t.strip():
+            adjacent = abs(c["x0"] - prev["x1"]) < 2.0
+            raised = c["bottom"] < prev["bottom"] - 0.08 * prev["size"]
+            if adjacent and not prev_sup and prev["size"] > c["size"] * 1.2 and raised:
+                is_sup = True
+                c["text"] = "^" + t
+                n_sup += 1
+                if t.isdigit() and prev.get("text", "")[-1:].isdigit():
+                    er.notes.append({"code": "SUPERSCRIPT_DIGIT", "severity": "BLOCK", "unit": unit,
+                                     "detail": f"superscript digit '{t}' directly after digit '{prev['text'][-1]}' (read as exponent here, but other "
+                                               "engines see one number, e.g. 10^3 versus 103). Check against the page."})
+            elif adjacent and prev_sup and abs(prev["size"] - c["size"]) < 0.5 and abs(c["bottom"] - prev["bottom"]) < 1.0:
+                is_sup = True                      # continuation of a multi-character superscript
+        prev, prev_sup = c, is_sup
+    if n_sym:
+        er.notes.append({"code": "SYMBOL_FONT_MAPPED", "severity": "INFO", "unit": unit,
+                         "detail": f"{n_sym} symbol-font glyph(s) (Wingdings 'y') converted to the bullet character."})
+    for fam, t in sorted(unknown):
+        er.notes.append({"code": "SYMBOL_UNKNOWN", "severity": "WARN", "unit": unit,
+                         "detail": f"symbol-font glyph {fam} code {t!r} is not in the verified map; kept as a labelled marker. Look at the page."})
+    if n_sup:
+        er.notes.append({"code": "SUPERSCRIPT_MARKED", "severity": "INFO", "unit": unit,
+                         "detail": f"{n_sup} superscript character(s) written with a leading '^'."})
+
 
 def _pypdf(path: Path, first: int, last: int | None) -> EngineResult:
     from pypdf import PdfReader
@@ -48,6 +99,7 @@ def _plumber(path: Path, first: int, last: int | None) -> EngineResult:
                 continue
             u = f"p{i}"
             try:
+                _mark_chars(page, u, er)
                 t = page.extract_text() or ""
                 tables = page.extract_tables() or []
             except Exception as e:  # noqa: BLE001

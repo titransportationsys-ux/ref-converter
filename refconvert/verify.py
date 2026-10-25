@@ -32,6 +32,8 @@ def _expected_numbers(unit: dict) -> Counter:
             for r in b["rows"]:
                 for cell in r:
                     c += numbers(cell)
+            for fn in (b.get("meta") or {}).get("footnotes") or []:
+                c += numbers(fn["text"])
     return c
 
 
@@ -157,6 +159,11 @@ def run(work: Work, out: Path | None) -> dict:
                         rows = list(csv.reader(f))
                     if rows != [[machine_cell(c) for c in r] for r in b["rows"]]:
                         problems.append(f"{fn.name} differs")
+                    fns = (b.get("meta") or {}).get("footnotes") or []
+                    if fns:
+                        fp = fn.with_name(fn.stem + ".footnotes.csv")
+                        if not fp.exists() or list(csv.reader(open(fp, encoding="utf-8", newline="")))[1:] != [[x["mark"], x["text"]] for x in fns]:
+                            problems.append(f"{fp.name} missing or differs")
             if tdir or problems:
                 add("csv tables match merged", not problems, ", ".join(problems[:10]))
         code = _find(out, f"test_{mod_name(slug)}.py", f"scripts/test_{mod_name(slug)}.py")

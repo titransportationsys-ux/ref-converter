@@ -11,6 +11,9 @@ INJECTION = re.compile(
     r"(ignore|disregard|forget)\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|rules?)"
     r"|you\s+are\s+(now\s+)?(an?\s+)?(ai|assistant|claude|chatgpt|language model)"
     r"|system\s+prompt|<\s*/?\s*(system|assistant)\s*>|as an ai (language )?model", re.I)
+MARK_RE = re.compile(r"\^([A-Za-z0-9*]{1,3})")
+FOOT_RE = re.compile(r"^\^?([A-Za-z])\s+([A-Z0-9\[(].*)$")         # '^a An 18-ft ...': mark, then a capitalised sentence
+STOP_RE = re.compile(r"^(\^?[A-Za-z]\s+[A-Z0-9\[(]|Note\b|Table\s+\d|Figure\s+\d|\d+(\.\d+)+\s)")
 IMPERIAL = re.compile(r"\b(ft|feet|foot|mph|in\.|inch(es)?|lbs?|psi|yd|yards?|mi|miles?)\b", re.I)
 METRIC = re.compile(r"\b(km/h|kph|m/s|mm|cm|km|kg|kn|mpa|kpa|m2|m²|veh/h)\b", re.I)
 
@@ -34,6 +37,7 @@ def run(merged: dict, book, sanity_path=None):
                 book.add("TABLE_RAGGED", "WARN", un["unit"],
                          f"table {b['tid']} rows have different lengths ({sorted({len(r) for r in b['rows']})}): merged/row-spanned cells make "
                          "column positions ambiguous. Check against the original before using it as a grid.", b["tid"])
+    link_footnotes(merged, book)
     for u, t in texts.items():
         m = INJECTION.search(t)
         if m:
@@ -68,3 +72,33 @@ def run(merged: dict, book, sanity_path=None):
                         continue
                     if (lo is not None and v < lo) or (hi is not None and v > hi):
                         book.add("SANITY_RANGE", "WARN", u, f"rule '{r.get('name', r['pattern'])}': value {v:g} outside [{lo}, {hi}] in '{m.group(0)[:60]}'")
+
+
+def link_footnotes(merged: dict, book):
+    """Attach footnote text to every table whose cells carry a '^x' mark. Text stays in the page text too."""
+    for un in merged["units"]:
+        lines = [ln.strip() for b in un["blocks"] if b["kind"] == "text" for ln in b["text"].split("\n")]
+        for b in un["blocks"]:
+            if b["kind"] != "table":
+                continue
+            marks = sorted({m for row in b["rows"] for cell in row for m in MARK_RE.findall(cell)})
+            if not marks:
+                continue
+            found, missing = [], []
+            for mk in marks:
+                text = None
+                for i, ln in enumerate(lines):
+                    m = FOOT_RE.match(ln)
+                    if m and m.group(1) == mk:
+                        parts = [m.group(2)]
+                        for nxt in lines[i + 1:i + 6]:
+                            if not nxt or STOP_RE.match(nxt):
+                                break
+                            parts.append(nxt)
+                        text = " ".join(parts)
+                        break
+                (found if text else missing).append((mk, text))
+            b["meta"]["footnotes"] = [{"mark": m, "text": t} for m, t in found]
+            if missing:
+                book.add("FOOTNOTE_NOT_FOUND", "WARN", un["unit"],
+                         f"table {b['tid']} has footnote mark(s) {', '.join('^' + m for m, _ in missing)} but no matching footnote text was found in the page text. Check the page.", b["tid"])

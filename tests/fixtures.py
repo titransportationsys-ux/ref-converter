@@ -12,8 +12,12 @@ def make_pdf(path: Path, pages: list[dict]) -> Path:
     """pages: [{"lines": [...], "table": [[...]]?, "graphics": int?}] -> minimal valid PDF with text, ruled tables."""
     n = len(pages)
     objs = [b"<< /Type /Catalog /Pages 2 0 R >>",
-            ("<< /Type /Pages /Kids [" + " ".join(f"{4 + 2 * i} 0 R" for i in range(n)) + f"] /Count {n} >>").encode(),
-            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+            ("<< /Type /Pages /Kids [" + " ".join(f"{6 + 2 * i} 0 R" for i in range(n)) + f"] /Count {n} >>").encode(),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Wingdings /FirstChar 32 /LastChar 126 /Widths [" + b" ".join([b"800"] * 95)
+            + b"] /FontDescriptor 5 0 R >>",
+            b"<< /Type /FontDescriptor /FontName /Wingdings /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 900 /Descent -200 "
+            b"/CapHeight 700 /StemV 80 >>"]
     for i, p in enumerate(pages):
         s = []
         if p.get("lines"):
@@ -31,13 +35,20 @@ def make_pdf(path: Path, pages: list[dict]) -> Path:
                 s.append(f"{x0 + c * cw} {y0} m {x0 + c * cw} {y0 - rows * ch} l S")
             for r, row in enumerate(t):
                 for c, cell in enumerate(row):
+                    sup = None
+                    if isinstance(cell, tuple):                      # (text, superscript)
+                        cell, sup = cell
                     drop = 9 if (p.get("skew") and r == 1 and c == 0) else 0       # one cell sits lower: breaks line layout
                     s.append(f"BT /F1 10 Tf {x0 + c * cw + 4} {y0 - r * ch - 15 + 8 - drop} Td ({_esc(cell)}) Tj ET")
+                    if sup:
+                        s.append(f"BT /F1 6 Tf {x0 + c * cw + 4 + 5.56 * len(cell)} {y0 - r * ch - 15 + 8 - drop + 4} Td ({_esc(sup)}) Tj ET")
+        if p.get("raw"):
+            s.append(p["raw"])
         for g in range(p.get("graphics", 0)):
             s.append(f"{60 + g * 5} 100 m {60 + g * 5} 150 l S")
         stream = "\n".join(s).encode("latin-1")
-        objs.append((f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> "
-                     f"/Contents {5 + 2 * i} 0 R >>").encode())
+        objs.append((f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> "
+                     f"/Contents {7 + 2 * i} 0 R >>").encode())
         objs.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
     out, offs = bytearray(b"%PDF-1.4\n"), []
     for k, o in enumerate(objs, 1):
