@@ -132,6 +132,10 @@ def to_markdown(work: Work, review: dict) -> str:
         r = f["resolution"]
         out.append(f"- {f['code']} at {f['unit']}{'.' + f['tid'] if f['tid'] else ''}: {r['action']}"
                    + (f" ({r['engine']})" if r.get("engine") else "") + f" by {r['by']} on {r['at']}. {r.get('note', '')}")
+    pts = work.patches()
+    if pts:
+        out += ["", "Text corrections (exact find-and-replace on the extracted text, each with who and why):"]
+        out += [f"- {p['unit']}: '{p['find'][:70]}' -> '{p['replace'][:70]}' by {p['by']} on {p['at']}. {p['note']}" for p in pts]
     openw = [f for f in review["flags"] if f["status"] == "open" and f["severity"] != "INFO"]
     if openw:
         out += ["", "Open flags:"]

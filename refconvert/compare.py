@@ -139,7 +139,7 @@ def _dicts(blocks):
 
 
 # ------------------------------------------------------------------ build
-def build(engines, issues, resolutions):
+def build(engines, issues, resolutions, patches=None):
     book = Book(resolutions)
     for it in list(issues) + [n for e in engines for n in e.notes]:
         book.add(it["code"], it["severity"], it.get("unit", ""), it["detail"], it.get("tid", ""))
@@ -327,11 +327,11 @@ def build(engines, issues, resolutions):
                 blocks.append(tb)
         merged["units"].append({"unit": u, "label": label, "status": "verified", "engine": "human" if text_override is not None else text_engine,
                                 "agreed": agreed, "blocks": _dicts(blocks), "flags": [f.id for f in unit_flags]})
-    _apply_patches(merged, book)
+    _apply_patches(merged, book, patches or [])
     return merged, book
 
 
-def _apply_patches(merged, book):
+def _apply_patches(merged, book, unit_patches=()):
     """Exact find-and-replace corrections recorded as 'patch' resolutions (who, why, what). A patch that no longer finds
     its text blocks again: the output must never silently differ from what was decided."""
     per_unit = {}
@@ -339,6 +339,8 @@ def _apply_patches(merged, book):
         r = f.resolution
         if f.status == "resolved" and r and r.get("action") == "patch":
             per_unit.setdefault(f.unit, []).append((f, r))
+    for up in unit_patches:                                   # page-level corrections (patches.json), not tied to a flag
+        per_unit.setdefault(up["unit"], []).append((None, {"patches": [up]}))
     for un in merged["units"]:
         for f, r in per_unit.get(un["unit"], []):
             for pt in r["patches"]:
@@ -356,7 +358,8 @@ def _apply_patches(merged, book):
                                     row[i] = c.replace(pt["find"], pt["replace"])
                                     b["meta"] = {**(b.get("meta") or {}), "patched": True}
                 if not hit:
-                    book.add("PATCH_NOT_APPLIED", "BLOCK", un["unit"], f"patch text not found any more: {pt['find'][:80]!r} (flag {f.id}). The text changed; redo the decision.")
+                    ref = f"flag {f.id}" if f else f"patch {pt.get('id', '?')}"
+                    book.add("PATCH_NOT_APPLIED", "BLOCK", un["unit"], f"patch text not found any more: {pt['find'][:80]!r} ({ref}). Fix or remove the patch (refconvert patch --remove ID).")
 
 
 def _apply_text_res(r, tx, nonempty, text_engine):

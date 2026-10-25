@@ -40,6 +40,8 @@ class Work:
     @property
     def resolutions_path(self): return self.root / "resolutions.json"
     @property
+    def patches_path(self): return self.root / "patches.json"
+    @property
     def equations_path(self): return self.root / "equations.yaml"
     @property
     def sanity_path(self): return self.root / "sanity.yaml"
@@ -93,6 +95,13 @@ class Work:
         rs = [x for x in self.resolutions() if x["flag"] != r["flag"]]
         rs.append(r)
         self._write(self.resolutions_path, rs)
+
+    # --- page-level text corrections
+    def patches(self) -> list[dict]:
+        return self._read(self.patches_path, [])
+
+    def save_patches(self, ps: list[dict]):
+        self._write(self.patches_path, ps)
 
     # --- results
     def save_merged(self, m): self._write(self.merged_path, m)

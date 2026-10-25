@@ -206,6 +206,21 @@ def cmd_resolve(a):
     return 1 if failed else 0
 
 
+def cmd_patch(a):
+    w = _work(a.work)
+    if a.remove:
+        n = pipeline.patch_remove(w, a.remove)
+        print(f"removed {n} patch(es)")
+        return _summary(w)
+    if a.file:
+        items = json.loads(Path(a.file).read_text(encoding="utf-8"))
+    else:
+        items = [{"unit": a.unit, "find": a.find, "replace": a.replace, "note": a.note or "", "by": a.by or ""}]
+    ids = pipeline.patch_batch(w, items)
+    print(f"added {len(ids)} patch(es): {', '.join(ids[:10])}")
+    return _summary(w)
+
+
 def cmd_emit(a):
     w = _work(a.work)
     review = emit.guard(w, a.allow_unverified)
@@ -256,6 +271,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("resolve"); p.add_argument("work"); p.add_argument("--flag", action="append"); p.add_argument("--code"); p.add_argument("--unit")
     p.add_argument("--accept", metavar="ENGINE"); p.add_argument("--override-text"); p.add_argument("--rows-file"); p.add_argument("--waive", action="store_true"); p.add_argument("--drop", action="store_true"); p.add_argument("--patch-file", help="JSON list of {find, replace}: exact text corrections")
     p.add_argument("--note"); p.add_argument("--by"); p.set_defaults(fn=cmd_resolve)
+    p = sub.add_parser("patch"); p.add_argument("work"); p.add_argument("--unit"); p.add_argument("--find"); p.add_argument("--replace")
+    p.add_argument("--note"); p.add_argument("--by"); p.add_argument("--file", help="JSON list of {unit, find, replace, note, by}")
+    p.add_argument("--remove", nargs="+", metavar="ID"); p.set_defaults(fn=cmd_patch)
     p = sub.add_parser("emit"); p.add_argument("work"); p.add_argument("--out", required=True); p.add_argument("--as", dest="fmt", default="md")
     p.add_argument("--skill-name"); p.add_argument("--description"); p.add_argument("--allow-unverified", action="store_true")
     p.add_argument("--force", action="store_true"); p.set_defaults(fn=cmd_emit)

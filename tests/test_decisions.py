@@ -4,7 +4,7 @@ import json
 import pytest
 
 from conftest import codes
-from refconvert import compare, pipeline
+from refconvert import compare, emit, pipeline, verify
 from refconvert.model import Block, EngineResult, ExtractError
 
 
@@ -182,3 +182,22 @@ def test_patch_is_exact_recorded_and_blocks_when_its_text_is_gone(make):
     pipeline.resolve_batch(w, [{"flag": unit_flag["id"], "action": "patch", "patches": [{"find": "text that is not there", "replace": "x"}],
                                 "note": "typo in find", "by": "me"}])
     assert "PATCH_NOT_APPLIED" in codes(w, "open", "BLOCK")
+
+
+def test_page_level_patch_needs_why_and_who_must_exist_and_can_be_removed(make, tmp_path):
+    _, w = make("pdf", pages=[{"lines": ["Lane width 3.50 m and 11/2 lanes"]}])
+    base = {"unit": "p1", "find": "11/2 lanes", "replace": "1 1/2 lanes", "note": "stacked fraction", "by": "me"}
+    with pytest.raises(ExtractError, match="not in the current output"):
+        pipeline.patch_batch(w, [dict(base, find="nonsense")])
+    with pytest.raises(ExtractError, match="--note"):
+        pipeline.patch_batch(w, [dict(base, note="")])
+    with pytest.raises(ExtractError, match="unknown unit"):
+        pipeline.patch_batch(w, [dict(base, unit="p9")])
+    (pid,) = pipeline.patch_batch(w, [base])
+    assert "1 1/2 lanes" in w.merged()["units"][0]["blocks"][0]["text"]
+    out = tmp_path / "o"
+    md = emit.emit_md(w, emit.guard(w, False), out, False).read_text(encoding="utf-8")
+    assert "Text corrections" in md and "11/2 lanes" in md
+    assert verify.run(w, out)["status"] in ("PASS", "FAIL")
+    assert pipeline.patch_remove(w, [pid]) == 1
+    assert "11/2 lanes" in w.merged()["units"][0]["blocks"][0]["text"]

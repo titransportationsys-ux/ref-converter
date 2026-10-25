@@ -76,7 +76,7 @@ def ingest(work: Work, engine: str, path: Path) -> list[str]:
 def rebuild(work: Work) -> dict:
     m = work.manifest()
     engines = work.engines()
-    merged, book = compare.build(engines, m.get("issues", []), work.resolutions())
+    merged, book = compare.build(engines, m.get("issues", []), work.resolutions(), work.patches())
     unit_text = checks.unit_text_map(merged)
     checks.run(merged, book, work.sanity_path)
     eqs = []
@@ -177,3 +177,39 @@ def resolve(work: Work, flag_ids: list[str], action: str, engine: str | None, te
     rows = json.loads(Path(rows_file).read_text(encoding="utf-8")) if rows_file else None
     return resolve_batch(work, [{"flag": fid, "action": action, "engine": engine, "text": text, "rows": rows, "note": note, "by": by}
                                 for fid in flag_ids])
+
+
+def patch_batch(work: Work, items: list[dict]) -> list[str]:
+    """Page-level exact corrections: [{unit, find, replace, note, by}]. Validated together, ONE rebuild.
+    'find' must occur in the CURRENT output of that unit, so a mistake in find is caught immediately."""
+    from .model import short_hash
+    units = {u["unit"]: u for u in work.merged().get("units", [])}
+    cur = work.patches()
+    made = []
+    for it in items:
+        u = str(it.get("unit", ""))
+        if u not in units:
+            raise ExtractError(f"unknown unit {u!r}")
+        if not it.get("find") or "replace" not in it:
+            raise ExtractError(f"{u}: patch needs 'find' (exact current text) and 'replace'")
+        if not (it.get("note") or "").strip() or not (it.get("by") or "").strip():
+            raise ExtractError(f"{u}: patch needs a --note (why) and --by (who)")
+        text = "\n".join(b["text"] for b in units[u]["blocks"] if b["kind"] == "text") + "\n" + \
+               "\n".join(c for b in units[u]["blocks"] if b["kind"] == "table" for r in b["rows"] for c in r)
+        if it["find"] not in text:
+            raise ExtractError(f"{u}: the text to replace is not in the current output: {it['find'][:80]!r}")
+        pid = short_hash(f"{u}|{it['find']}|{it['replace']}")
+        made.append({"id": pid, "unit": u, "find": it["find"], "replace": it["replace"], "note": it["note"], "by": it["by"], "at": now()})
+    keep = {p["id"]: p for p in cur}
+    keep.update({p["id"]: p for p in made})
+    work.save_patches(list(keep.values()))
+    rebuild(work)
+    return [p["id"] for p in made]
+
+
+def patch_remove(work: Work, ids: list[str]) -> int:
+    cur = work.patches()
+    left = [p for p in cur if p["id"] not in set(ids)]
+    work.save_patches(left)
+    rebuild(work)
+    return len(cur) - len(left)
