@@ -9,7 +9,7 @@ from ..model import Block, EngineResult, ExtractError, clean
 from . import unavailable
 
 
-def _pypdf(path: Path) -> EngineResult:
+def _pypdf(path: Path, first: int, last: int | None) -> EngineResult:
     from pypdf import PdfReader
     r = PdfReader(str(path))
     if r.is_encrypted:
@@ -23,6 +23,8 @@ def _pypdf(path: Path) -> EngineResult:
     import pypdf
     er.version = pypdf.__version__
     for i, pg in enumerate(r.pages, 1):
+        if i < first or (last is not None and i > last):
+            continue
         u = f"p{i}"
         try:
             t = pg.extract_text() or ""
@@ -37,11 +39,13 @@ def _pypdf(path: Path) -> EngineResult:
     return er
 
 
-def _plumber(path: Path) -> EngineResult:
+def _plumber(path: Path, first: int, last: int | None) -> EngineResult:
     import pdfplumber
     er = EngineResult("pdfplumber", version=getattr(pdfplumber, "__version__", ""))
     with pdfplumber.open(str(path)) as pdf:
         for i, page in enumerate(pdf.pages, 1):
+            if i < first or (last is not None and i > last):
+                continue
             u = f"p{i}"
             try:
                 t = page.extract_text() or ""
@@ -59,11 +63,12 @@ def _plumber(path: Path) -> EngineResult:
     return er
 
 
-def _pdftotext(path: Path) -> EngineResult:
+def _pdftotext(path: Path, first: int, last: int | None) -> EngineResult:
     exe = shutil.which("pdftotext")
     if not exe:
         raise FileNotFoundError("pdftotext (poppler-utils) not installed")
-    proc = subprocess.run([exe, "-layout", "-enc", "UTF-8", str(path), "-"], capture_output=True, timeout=900)
+    cmd = [exe, "-layout", "-enc", "UTF-8", "-f", str(first)] + (["-l", str(last)] if last else []) + [str(path), "-"]
+    proc = subprocess.run(cmd, capture_output=True, timeout=3600)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.decode("utf-8", "replace")[:200])
     pages = proc.stdout.decode("utf-8", "replace").split("\f")
@@ -71,15 +76,16 @@ def _pdftotext(path: Path) -> EngineResult:
         pages = pages[:-1]
     er = EngineResult("pdftotext")
     for i, t in enumerate(pages, 1):
-        er.blocks.append(Block(f"p{i}", "text", clean(t)))
+        er.blocks.append(Block(f"p{i + first - 1}", "text", clean(t)))     # keep ORIGINAL physical page numbers
     return er
 
 
-def extract(path: Path, kind: str):
+def extract(path: Path, kind: str, pages=None):
+    first, last = pages if pages else (1, None)
     engines, issues = [], []
     for name, fn in (("pdfplumber", _plumber), ("pypdf", _pypdf), ("pdftotext", _pdftotext)):
         try:
-            engines.append(fn(path))
+            engines.append(fn(path, first, last))
         except ExtractError:
             raise
         except ImportError as e:

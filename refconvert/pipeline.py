@@ -12,7 +12,7 @@ from .model import VERSION, Block, EngineResult, ExtractError, sha256_file
 from .workspace import Work, now, slugify
 
 
-def extract(src: Path, work_root: Path) -> Work:
+def extract(src: Path, work_root: Path, pages=None) -> Work:
     src = Path(src).resolve()
     if not src.is_file():
         raise ExtractError(f"{src} is not a file")
@@ -20,13 +20,14 @@ def extract(src: Path, work_root: Path) -> Work:
     if work.exists():
         raise ExtractError(f"{work_root} already holds a conversion. Use a new --work folder or delete it first "
                            "(resolutions and equations there are your audit trail; nothing is overwritten).")
-    kind, engines, issues, derived, used = extractors.extract(src, work.root)
+    kind, engines, issues, derived, used = extractors.extract(src, work.root, pages)
     work.root.mkdir(parents=True, exist_ok=True)
     for er in engines:
         work.save_engine(er)
     work.save_manifest({
         "tool": f"refconvert {VERSION}", "created": now(), "source": str(src), "source_name": src.name,
         "sha256": sha256_file(src), "size": src.stat().st_size, "kind": kind, "slug": slugify(src.name),
+        "pages": list(pages) if pages else None,
         "derived_from": str(derived) if derived else None,
         "converted_file": str(used) if derived else None,
         "converted_sha256": sha256_file(used) if derived else None,

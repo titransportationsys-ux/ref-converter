@@ -79,8 +79,16 @@ def cmd_inspect(a):
 def cmd_extract(a):
     src = Path(a.file)
     root = Path(a.work) if a.work else Path("refwork") / slugify(src.name)
-    w = pipeline.extract(src, root)
-    print(f"work folder: {w.root}")
+    pages = None
+    if a.pages:
+        try:
+            lo, _, hi = a.pages.partition("-")
+            pages = (int(lo), int(hi or lo))
+            assert 1 <= pages[0] <= pages[1]
+        except (ValueError, AssertionError):
+            raise ExtractError("--pages must look like 536-562 (first-last physical PDF pages)")
+    w = pipeline.extract(src, root, pages)
+    print(f"work folder: {w.root}" + (f"  (PDF pages {pages[0]}-{pages[1]} only; citations use physical PDF page numbers)" if pages else ""))
     return _summary(w)
 
 
@@ -228,7 +236,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="refconvert", description="Convert reference documents into verified, project-ready data.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("inspect"); p.add_argument("file"); p.set_defaults(fn=cmd_inspect)
-    p = sub.add_parser("extract"); p.add_argument("file"); p.add_argument("--work"); p.set_defaults(fn=cmd_extract)
+    p = sub.add_parser("extract"); p.add_argument("file"); p.add_argument("--work"); p.add_argument("--pages", help="PDF only: first-last physical page, e.g. 536-562"); p.set_defaults(fn=cmd_extract)
     p = sub.add_parser("batch"); p.add_argument("path"); p.add_argument("--work-root", default="refwork"); p.set_defaults(fn=cmd_batch)
     p = sub.add_parser("ingest"); p.add_argument("work"); p.add_argument("--engine", required=True); p.add_argument("file"); p.set_defaults(fn=cmd_ingest)
     p = sub.add_parser("build"); p.add_argument("work"); p.set_defaults(fn=cmd_build)

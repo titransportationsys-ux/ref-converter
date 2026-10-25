@@ -192,3 +192,14 @@ def test_html_inline_markup_and_table_cells_do_not_split_or_glue_numbers(tmp_pat
     assert codes(w, "open", "BLOCK") == []
     text = " ".join(b["text"] for b in w.merged()["units"][0]["blocks"] if b["kind"] == "text")
     assert "1,250 veh/h & 3.5 % grade" in text and "999" not in text
+
+
+def test_pdf_page_range_keeps_original_page_numbers(tmp_path):
+    src = F.make_pdf(tmp_path / "book.pdf", [{"lines": [f"Page body {n} radius {100 + n} m"]} for n in range(1, 6)])
+    w = pipeline.extract(src, tmp_path / "w", pages=(3, 4))
+    assert [u["unit"] for u in w.merged()["units"]] == ["p3", "p4"]
+    assert "radius 103 m" in w.merged()["units"][0]["blocks"][0]["text"]
+    assert w.manifest()["pages"] == [3, 4]
+    assert codes(w, "open", "BLOCK") == []
+    with pytest.raises(ExtractError, match="only applies"):
+        pipeline.extract(F.make_text(tmp_path / "t.md"), tmp_path / "w2", pages=(1, 2))
