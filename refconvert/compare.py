@@ -327,7 +327,36 @@ def build(engines, issues, resolutions):
                 blocks.append(tb)
         merged["units"].append({"unit": u, "label": label, "status": "verified", "engine": "human" if text_override is not None else text_engine,
                                 "agreed": agreed, "blocks": _dicts(blocks), "flags": [f.id for f in unit_flags]})
+    _apply_patches(merged, book)
     return merged, book
+
+
+def _apply_patches(merged, book):
+    """Exact find-and-replace corrections recorded as 'patch' resolutions (who, why, what). A patch that no longer finds
+    its text blocks again: the output must never silently differ from what was decided."""
+    per_unit = {}
+    for f in list(book.flags):
+        r = f.resolution
+        if f.status == "resolved" and r and r.get("action") == "patch":
+            per_unit.setdefault(f.unit, []).append((f, r))
+    for un in merged["units"]:
+        for f, r in per_unit.get(un["unit"], []):
+            for pt in r["patches"]:
+                hit = 0
+                for b in un["blocks"]:
+                    if b["kind"] == "text" and pt["find"] in b["text"]:
+                        hit += b["text"].count(pt["find"])
+                        b["text"] = b["text"].replace(pt["find"], pt["replace"])
+                        b["meta"] = {**(b.get("meta") or {}), "patched": True}
+                    elif b["kind"] == "table":
+                        for row in b["rows"]:
+                            for i, c in enumerate(row):
+                                if pt["find"] in c:
+                                    hit += c.count(pt["find"])
+                                    row[i] = c.replace(pt["find"], pt["replace"])
+                                    b["meta"] = {**(b.get("meta") or {}), "patched": True}
+                if not hit:
+                    book.add("PATCH_NOT_APPLIED", "BLOCK", un["unit"], f"patch text not found any more: {pt['find'][:80]!r} (flag {f.id}). The text changed; redo the decision.")
 
 
 def _apply_text_res(r, tx, nonempty, text_engine):
@@ -354,7 +383,8 @@ def _apply_table_res(r, cands, default, merged_tables, tid, u):
     if r["action"] == "override":
         class _H:                            # tiny stand-in engine for human-supplied rows
             engine = "human"
-        return (_H, Block(u, "table", rows=r["rows"], tid=tid))
+        keep = {k: v for k, v in (default[1].meta or {}).items() if k == "footnotes"}      # the legend text stays with the table
+        return (_H, Block(u, "table", rows=r["rows"], tid=tid, meta=keep))
     return default                           # waive
 
 

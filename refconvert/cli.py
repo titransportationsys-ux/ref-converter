@@ -187,12 +187,14 @@ def cmd_resolve(a):
         ids += [f["id"] for f in r["flags"] if f["code"] == a.code and f["status"] == "open" and (not a.unit or f["unit"] == a.unit)]
     if not ids:
         raise ExtractError("no flags selected: give --flag ID or --code CODE (see 'status')")
-    action = "accept" if a.accept else "override" if (a.override_text is not None or a.rows_file) else "waive" if a.waive else "drop" if a.drop else None
+    action = "accept" if a.accept else "override" if (a.override_text is not None or a.rows_file) else "waive" if a.waive else "drop" if a.drop else "patch" if a.patch_file else None
     if not action:
-        raise ExtractError("choose one of --accept ENGINE, --override-text TEXT / --rows-file FILE, --waive, --drop")
+        raise ExtractError("choose one of --accept ENGINE, --override-text TEXT / --rows-file FILE, --waive, --drop, --patch-file F")
     ok, failed = [], []
     rows = json.loads(Path(a.rows_file).read_text(encoding="utf-8")) if a.rows_file else None
-    items = [{"flag": fid, "action": action, "engine": a.accept, "text": a.override_text, "rows": rows, "note": a.note or "", "by": a.by or ""} for fid in ids]
+    patches = json.loads(Path(a.patch_file).read_text(encoding="utf-8")) if a.patch_file else None
+    items = [{"flag": fid, "action": action, "engine": a.accept, "text": a.override_text, "rows": rows, "patches": patches,
+              "note": a.note or "", "by": a.by or ""} for fid in ids]
     try:
         ok = pipeline.resolve_batch(w, items)                 # all-or-nothing, one rebuild
     except ExtractError as e:
@@ -252,7 +254,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("status"); p.add_argument("work"); p.add_argument("--all", action="store_true"); p.add_argument("--code")
     p.add_argument("--units", action="store_true"); p.set_defaults(fn=cmd_status)
     p = sub.add_parser("resolve"); p.add_argument("work"); p.add_argument("--flag", action="append"); p.add_argument("--code"); p.add_argument("--unit")
-    p.add_argument("--accept", metavar="ENGINE"); p.add_argument("--override-text"); p.add_argument("--rows-file"); p.add_argument("--waive", action="store_true"); p.add_argument("--drop", action="store_true")
+    p.add_argument("--accept", metavar="ENGINE"); p.add_argument("--override-text"); p.add_argument("--rows-file"); p.add_argument("--waive", action="store_true"); p.add_argument("--drop", action="store_true"); p.add_argument("--patch-file", help="JSON list of {find, replace}: exact text corrections")
     p.add_argument("--note"); p.add_argument("--by"); p.set_defaults(fn=cmd_resolve)
     p = sub.add_parser("emit"); p.add_argument("work"); p.add_argument("--out", required=True); p.add_argument("--as", dest="fmt", default="md")
     p.add_argument("--skill-name"); p.add_argument("--description"); p.add_argument("--allow-unverified", action="store_true")

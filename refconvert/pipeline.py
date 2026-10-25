@@ -114,10 +114,10 @@ def rebuild(work: Work) -> dict:
     return review
 
 
-def _make_resolution(work: Work, flags: dict, fid: str, action: str, engine, text, rows, note: str, by: str) -> dict:
-    if action not in ("accept", "override", "waive", "drop"):
-        raise ExtractError("action must be accept, override, waive or drop")
-    if action in ("override", "waive", "drop") and not (note or "").strip():
+def _make_resolution(work: Work, flags: dict, fid: str, action: str, engine, text, rows, note: str, by: str, patches=None) -> dict:
+    if action not in ("accept", "override", "waive", "drop", "patch"):
+        raise ExtractError("action must be accept, override, waive, drop or patch")
+    if action in ("override", "waive", "drop", "patch") and not (note or "").strip():
         raise ExtractError(f"a --note explaining the {action} is required (it goes into the audit trail)")
     if not (by or "").strip():
         raise ExtractError("--by is required (who decided: a person's name, or ref-verifier)")
@@ -142,6 +142,12 @@ def _make_resolution(work: Work, flags: dict, fid: str, action: str, engine, tex
         if want == "text" and not any(b.text.strip() for b in eng.blocks if b.unit == f["unit"] and b.kind == "text"):
             raise ExtractError(f"engine '{engine}' has no text for {f['unit']}: cannot accept an empty reading")
         r["engine"] = engine
+    elif action == "patch":
+        if not patches or not all(isinstance(x, dict) and x.get("find") and "replace" in x for x in patches):
+            raise ExtractError("patch needs a list of {find, replace}; 'find' must be the exact text now in the output")
+        if not f["unit"]:
+            raise ExtractError("patch needs a flag that belongs to a page/unit")
+        r["patches"] = patches
     elif action == "override":
         if is_table:
             if rows is None:
@@ -157,7 +163,7 @@ def _make_resolution(work: Work, flags: dict, fid: str, action: str, engine, tex
 def resolve_batch(work: Work, items: list[dict]) -> list[str]:
     """items: [{flag, action, engine?, text?, rows?, note, by}]. All validated first, written together, ONE rebuild."""
     flags = {f["id"]: f for f in work.review()["flags"]}
-    made = [_make_resolution(work, flags, it["flag"], it["action"], it.get("engine"), it.get("text"), it.get("rows"), it.get("note", ""), it.get("by", ""))
+    made = [_make_resolution(work, flags, it["flag"], it["action"], it.get("engine"), it.get("text"), it.get("rows"), it.get("note", ""), it.get("by", ""), it.get("patches"))
             for it in items]
     rs = {r["flag"]: r for r in work.resolutions()}
     rs.update({r["flag"]: r for r in made})

@@ -90,7 +90,8 @@ def run(work: Work, out: Path | None) -> dict:
     engines = {e.engine: e for e in work.engines()}
     bad = []
     for un in mg["units"]:
-        texts = [b for b in un["blocks"] if b["kind"] == "text" and (b.get("meta") or {}).get("engine") != "human"]
+        texts = [b for b in un["blocks"] if b["kind"] == "text" and (b.get("meta") or {}).get("engine") != "human"
+                 and not (b.get("meta") or {}).get("patched")]
         if texts:
             mine = numbers("\n".join(b["text"] for b in texts))
             ok = False
@@ -102,14 +103,15 @@ def run(work: Work, out: Path | None) -> dict:
             if not ok:
                 bad.append(f"{un['unit']} text")
         for b in un["blocks"]:
-            if b["kind"] != "table" or (b.get("meta") or {}).get("engine") == "human":
+            if b["kind"] != "table" or (b.get("meta") or {}).get("engine") == "human" or (b.get("meta") or {}).get("patched"):
                 continue
             want = [[cmp_text(c) for c in r] for r in b["rows"]]
             if not any([[cmp_text(c) for c in r] for r in x.rows] == want
                        for e in engines.values() for x in e.blocks if x.unit == un["unit"] and x.kind == "table" and x.tid == b["tid"]):
                 bad.append(f"{un['unit']}.{b['tid']}")
     add("merged content equals a raw engine reading", not bad, ", ".join(bad[:15]))
-    humans = [f"{un['unit']}" for un in mg["units"] for b in un["blocks"] if (b.get("meta") or {}).get("engine") == "human"]
+    humans = [f"{un['unit']}" for un in mg["units"] for b in un["blocks"]
+              if (b.get("meta") or {}).get("engine") == "human" or (b.get("meta") or {}).get("patched")]
     if humans:
         checks.append({"name": "human overrides present", "status": "INFO", "detail": "hand-supplied content in: " + ", ".join(sorted(set(humans)))})
 

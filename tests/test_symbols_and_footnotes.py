@@ -144,3 +144,14 @@ def test_strip_regex_is_pdf_only(tmp_path):
     from refconvert.model import ExtractError
     with pytest.raises(ExtractError, match="only apply to PDF"):
         pipeline.extract(F.make_text(tmp_path / "t.md"), tmp_path / "w", strip=["x"])
+
+
+def test_table_override_keeps_the_footnote_legend(make, tmp_path):
+    _, w = make("pdf", pages=[{"lines": ["Table 6-5 widths"], "table": TABLE, "skew": True, "raw": FOOT}])
+    flag = next(f for f in w.review()["flags"] if f["code"] == "TABLE_STRUCTURE" and f["status"] == "open")
+    rows = w.root / "rows.json"
+    rows.write_text(json.dumps([["Speed", "Under 400"], ["20", "20^a"], ["25", "22^b"]]))
+    pipeline.resolve(w, [flag["id"]], "override", None, None, rows, "typed from the page", "test")
+    tb = next(b for b in w.merged()["units"][0]["blocks"] if b["kind"] == "table")
+    assert tb["meta"]["engine"] == "human" and [f["mark"] for f in tb["meta"]["footnotes"]] == ["a", "b"]
+    assert "FOOTNOTE_NOT_FOUND" not in codes(w)

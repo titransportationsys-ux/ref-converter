@@ -157,3 +157,28 @@ def test_batch_resolve_is_all_or_nothing_and_drop_removes_a_false_table(make):
     assert codes(w, "open", "BLOCK") == []
     assert not [b for b in w.merged()["units"][0]["blocks"] if b["kind"] == "table"]
     assert "Radius 230 m" in w.merged()["units"][0]["blocks"][0]["text"]               # page text untouched
+
+
+def test_dot_leaders_do_not_hide_page_numbers():
+    from refconvert.model import numbers
+    a = "Figure 9-35. Left-Turn Lane Warrants (16) .......................... 9-106"
+    b = "Figure 9-35. Left-Turn Lane Warrants (16) ..........................9-106"
+    assert numbers(a) == numbers(b)
+    assert numbers("clause 3.5.2 and 1,250 veh/h") == numbers("clause 3.5.2 and 1250 veh/h")
+
+
+def test_patch_is_exact_recorded_and_blocks_when_its_text_is_gone(make):
+    _, w = make("pdf", pages=[{"lines": ["Add plus ^1/ lane width and 230 m"], "table": [["A", "B"], ["1", "2"], ["3", "4"]], "skew": True}])
+    flag = next(f for f in w.review()["flags"] if f["code"] == "TABLE_STRUCTURE")
+    pipeline.resolve_batch(w, [{"flag": flag["id"], "action": "accept", "engine": "pdfplumber", "note": "", "by": "me"}])
+    unit_flag = next(f for f in w.review()["flags"] if f["code"] == "TABLE_STRUCTURE")
+    with pytest.raises(ExtractError, match="find"):
+        pipeline.resolve_batch(w, [{"flag": unit_flag["id"], "action": "patch", "patches": [], "note": "x", "by": "me"}])
+    pipeline.resolve_batch(w, [{"flag": unit_flag["id"], "action": "patch", "patches": [{"find": "plus ^1/ lane", "replace": "plus 1/2 lane"}],
+                                "note": "stacked fraction half lost its subscript 2", "by": "me"}])
+    txt = w.merged()["units"][0]["blocks"][0]["text"]
+    assert "plus 1/2 lane width" in txt and "^1/" not in txt
+    assert w.merged()["units"][0]["blocks"][0]["meta"]["patched"] is True
+    pipeline.resolve_batch(w, [{"flag": unit_flag["id"], "action": "patch", "patches": [{"find": "text that is not there", "replace": "x"}],
+                                "note": "typo in find", "by": "me"}])
+    assert "PATCH_NOT_APPLIED" in codes(w, "open", "BLOCK")

@@ -18,10 +18,11 @@ from pathlib import Path
 
 VERSION = "0.1.0"
 
-# Number token: optional sign (only when not glued to a preceding word/sign),
+# Number token (a dot or comma directly after a digit continues that number, but a dot leader such as '.....9-106'
+# must not hide the 9): optional sign (only when not glued to a preceding word/sign),
 # digits, optional .,-separated groups, optional exponent. Clause numbers such
 # as 3.5.2 stay one token.
-NUM_RE = re.compile(r"(?<![\d.,])(?:(?<![\w\-+])[-+])?\d+(?:[.,]\d+)*(?:[eE][-+]?\d+)?")
+NUM_RE = re.compile(r"(?<!\d)(?<!\d[.,])(?:(?<![\w\-+])[-+])?\d+(?:[.,]\d+)*(?:[eE][-+]?\d+)?")
 
 _LIGATURES = str.maketrans({
     "ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi",
