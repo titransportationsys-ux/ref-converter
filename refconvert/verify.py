@@ -58,7 +58,7 @@ def _md_bodies(text: str) -> dict:
         if skip:
             skip -= 1
             continue
-        if line.startswith("> **UNVERIFIED") or line.startswith("> **WAIVED") or re.fullmatch(r"\[src: .*\]", line):
+        if line.startswith("> **UNVERIFIED") or line.startswith("> **WAIVED") or line.startswith("> Raw page reading:") or re.fullmatch(r"\[src: .*\]", line):
             continue
         if cur is not None:
             bodies[cur].append(line)

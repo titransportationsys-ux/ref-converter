@@ -12,6 +12,8 @@ from .model import VERSION, ExtractError, sha256_file, unit_title
 from .workspace import Work
 
 MD_FRONT = "---"
+RAW_NOTE = ("> Raw page reading: text from tables, especially side-by-side tables, may appear interleaved or out of order here. "
+            "The structured tables below are the authoritative reading.")
 STYLE_HEAD = re.compile(r"^(heading|title|überschrift|titre)\s*(\d)?", re.I)
 
 
@@ -92,8 +94,13 @@ def to_markdown(work: Work, review: dict) -> str:
             out += ["> **UNVERIFIED unit** (open blocking flag).", ""]
         elif un["status"] == "waived":
             out += ["> **WAIVED unit**: a blocking flag was waived by a named decision (see review log).", ""]
+        has_table = any(b["kind"] == "table" for b in un["blocks"])
+        note_done = False
         for b in un["blocks"]:
             if b["kind"] == "text":
+                if has_table and not note_done and b["text"].strip():
+                    out += [RAW_NOTE, ""]
+                    note_done = True
                 out += _text_md(b)
             else:
                 out += [f"<!-- table: {un['unit']}.{b['tid']} -->", f"**Table {b['tid'][1:]}**", ""]
@@ -184,6 +191,7 @@ def emit_json(work: Work, review: dict, out: Path, force: bool) -> Path:
     doc = {"source": mg["source"], "tool": f"refconvert {VERSION}", "built": mg["built"], "status": _status(review),
            "engines": mg["engines"], "units": [
                {"unit": u["unit"], "citation": u["label"], "status": u["status"], "engine": u["engine"],
+                **({"note": RAW_NOTE.lstrip("> ")} if any(b["kind"] == "table" for b in u["blocks"]) else {}),
                 "blocks": [{"kind": b["kind"], "text": b["text"]} if b["kind"] == "text" else
                            {"kind": "table", "id": b["tid"], "rows": [[machine_cell(c) for c in r] for r in b["rows"]],
                             "footnotes": (b.get("meta") or {}).get("footnotes", [])}

@@ -1,6 +1,7 @@
 """PDF: three independent engines (pypdf, pdfplumber, poppler pdftotext)."""
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -60,6 +61,32 @@ def _mark_chars(page, unit, er):
                          "detail": f"{n_sup} superscript character(s) written with a leading '^'."})
 
 
+LEGEND = re.compile(r"^\^?([A-Za-z0-9*])\s+([A-Z0-9\[(].*)$")          # '^a An 18-ft ...'
+LEGEND_STOP = re.compile(r"^(\^?[A-Za-z0-9*]\s+[A-Z0-9\[(]|Note\b|Table\s+\d|Figure\s+\d|\d+(\.\d+)+\s)")
+
+
+def _legends(lines, bbox, marks):
+    """Footnote text for each mark: the NEAREST legend line directly BELOW the table (geometry, never page-wide guessing)."""
+    below = sorted((ln for ln in lines if ln["top"] >= bbox[3] - 1), key=lambda ln: ln["top"])
+    out = []
+    for mk in marks:
+        if len(mk) != 1:
+            continue
+        for i, ln in enumerate(below):
+            m = LEGEND.match(ln["text"].strip())
+            if m and m.group(1) == mk:
+                parts, last = [m.group(2)], ln
+                for nxt in below[i + 1:i + 6]:
+                    t = nxt["text"].strip()
+                    if not t or LEGEND_STOP.match(t) or nxt["top"] - last["bottom"] > 6:
+                        break
+                    parts.append(t)
+                    last = nxt
+                out.append({"mark": mk, "text": clean("\n".join(parts)).replace("\n", " ")})
+                break
+    return out
+
+
 def _pypdf(path: Path, first: int, last: int | None) -> EngineResult:
     from pypdf import PdfReader
     r = PdfReader(str(path))
@@ -101,15 +128,24 @@ def _plumber(path: Path, first: int, last: int | None) -> EngineResult:
             try:
                 _mark_chars(page, u, er)
                 t = page.extract_text() or ""
-                tables = page.extract_tables() or []
+                t = re.sub(r"(?m)^\u2022[ \t]*\n(?=\S)", "\u2022 ", t)       # the symbol glyph sits higher than its text: re-join the line
+                found = list(page.find_tables())
             except Exception as e:  # noqa: BLE001
-                t, tables = "", []
+                t, found = "", []
                 er.notes.append({"code": "PAGE_READ_ERROR", "severity": "WARN", "unit": u, "detail": f"pdfplumber failed on page: {e}"})
             er.blocks.append(Block(u, "text", clean(t)))
-            for k, tb in enumerate(tables, 1):
-                rows = [[clean(c or "").replace("\n", " ") for c in row] for row in tb]
+            lines = None
+            for k, tb in enumerate(found, 1):
+                rows = [[clean(c or "").replace("\n", " ") for c in row] for row in tb.extract()]
                 if any(any(c for c in row) for row in rows):
-                    er.blocks.append(Block(u, "table", rows=rows, tid=f"t{k}"))
+                    meta = {}
+                    marks = sorted({m for r in rows for c in r for m in re.findall(r"\^([A-Za-z0-9*]{1,3})", c)})
+                    if marks:
+                        lines = lines if lines is not None else page.extract_text_lines()
+                        fn = _legends(lines, tb.bbox, marks)
+                        if fn:
+                            meta["footnotes"] = fn
+                    er.blocks.append(Block(u, "table", rows=rows, tid=f"t{k}", meta=meta))
             er.unit_meta[u] = {"images": len(page.images),
                                "graphics": len(page.rects) + len(page.lines) + len(page.curves)}
     return er

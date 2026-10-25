@@ -309,7 +309,7 @@ def build(engines, issues, resolutions):
                     unit_flags.append(f2)
             if chosen is not None and tid not in merged_tables:
                 e, b = chosen
-                merged_tables[tid] = Block(u, "table", rows=b.rows, tid=tid, meta={"engine": e.engine, **extra_meta})
+                merged_tables[tid] = Block(u, "table", rows=b.rows, tid=tid, meta={**(b.meta or {}), "engine": e.engine, **extra_meta})
 
         # ---- assemble blocks in reading order
         blocks, emitted = [], set()

@@ -8,8 +8,8 @@ from conftest import codes
 from refconvert import emit, pipeline, verify
 
 BULLETS = ("BT /F1 11 Tf 100 700 Td (Widths may be considered:) Tj ET "
-           "BT /F2 11 Tf 114 680 Td (y) Tj ET BT /F1 11 Tf 130 680 Td (paint-striped, 2 to 4 ft wide;) Tj ET "
-           "BT /F2 11 Tf 114 664 Td (y) Tj ET BT /F1 11 Tf 130 664 Td (raised curb, 10 to 16 ft wide.) Tj ET "
+           "BT /F2 11 Tf 114 686 Td (y) Tj ET BT /F1 11 Tf 130 680 Td (paint-striped, 2 to 4 ft wide;) Tj ET "
+           "BT /F2 11 Tf 114 670 Td (y) Tj ET BT /F1 11 Tf 130 664 Td (raised curb, 10 to 16 ft wide.) Tj ET "
            "BT /F1 11 Tf 100 640 Td (The variable y and a typo are plain letters.) Tj ET")
 
 
@@ -72,3 +72,31 @@ def test_superscript_digit_after_digit_blocks_because_engines_disagree_on_meanin
            "BT /F1 11 Tf 160 700 Td ( vehicles per day) Tj ET")
     _, w = make("pdf", pages=[{"raw": raw}])
     assert "SUPERSCRIPT_DIGIT" in codes(w, "open", "BLOCK")
+
+
+def test_each_table_gets_the_legend_directly_below_it_not_another_with_the_same_letter():
+    from refconvert.extractors.pdf import _legends
+    lines = [{"text": "a Rate of K is L/A. (See Sections 3.2.2 for details.)", "top": 100, "bottom": 110},
+             {"text": "Table 6-4. Passing sight distance", "top": 140, "bottom": 150},
+             {"text": "a Rate of K is L/A.", "top": 300, "bottom": 310},
+             {"text": "(See Sections 3.2.4 and 3.4.6 for details.)", "top": 311, "bottom": 321},
+             {"text": "6.2.2 Cross-Sectional Elements", "top": 330, "bottom": 340}]
+    first = _legends(lines, (0, 0, 500, 90), ["a"])          # table above the first legend
+    second = _legends(lines, (0, 0, 500, 290), ["a"])        # table above the second legend, first one is higher up
+    assert "3.2.2" in first[0]["text"] and "3.2.4" not in first[0]["text"]
+    assert "3.2.4 and 3.4.6" in second[0]["text"] and "3.2.2" not in second[0]["text"]
+    assert "Cross-Sectional" not in second[0]["text"]       # stops at the next heading
+
+
+def test_page_text_with_tables_is_labelled_as_a_raw_reading(make, tmp_path):
+    _, w = make("pdf", pages=[{"lines": ["Table 6-5 widths"], "table": [["Speed", "Radius"], ["60", "120"], ["80", "230"]]},
+                              {"lines": ["A page with no table at all, 12 m wide."]}])
+    out = tmp_path / "o"
+    md = emit.emit_md(w, emit.guard(w, False), out, False).read_text(encoding="utf-8")
+    assert md.count("> Raw page reading:") == 1                     # only the page that has a structured table
+    assert md.index("> Raw page reading:") < md.index("**Table 1**")
+    emit.emit_json(w, emit.guard(w, False), out, False)
+    emit.emit_csv(w, out, False)
+    units = json.loads(next(out.glob("*.json")).read_text(encoding="utf-8"))["units"]
+    assert "note" in units[0] and "note" not in units[1]
+    assert verify.run(w, out)["status"] == "PASS"
