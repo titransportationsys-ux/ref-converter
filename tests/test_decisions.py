@@ -124,3 +124,24 @@ def test_sanity_rules_flag_out_of_range_values(tmp_path):
     pipeline.rebuild(w)
     flags = [f for f in w.review()["flags"] if f["code"] == "SANITY_RANGE"]
     assert len(flags) == 1 and "800" in flags[0]["detail"]
+
+
+def test_table_override_with_a_number_not_on_the_page_is_blocked(make):
+    _, w = make("pdf", pages=[{"lines": ["Radius 230 m"], "table": [["A", "B"], ["1", "2"], ["3", "4"]], "skew": True}])
+    (flag,) = [f for f in w.review()["flags"] if f["code"] == "TABLE_STRUCTURE"]
+    rows = w.root / "rows.json"
+    rows.write_text('[["A","B"],["1","2"],["3","9"]]')                      # 9 is a typo: not on the page
+    pipeline.resolve(w, [flag["id"]], "override", None, None, rows, "typed from the page", "me")
+    assert codes(w, "open", "BLOCK") == ["TABLE_OVERRIDE_NUMBERS"]
+    rows.write_text('[["A","B"],["1","2"],["3","4"]]')
+    pipeline.resolve(w, [flag["id"]], "override", None, None, rows, "typed from the page", "me")
+    assert codes(w, "open", "BLOCK") == []
+
+
+def test_dropped_label_column_cannot_pass_the_line_layout_check():
+    from refconvert.compare import _rows_in_lines
+    page = "Type Speed\nLevel 7 7 7\nRolling 10 10 9"
+    assert _rows_in_lines([["Level", "7", "7", "7"], ["Rolling", "10", "10", "9"]], page)
+    assert not _rows_in_lines([["7", "7", "7"], ["10", "10", "9"]], page)               # label column lost
+    assert not _rows_in_lines([["Level", "7"], ["Rolling", "10"]], page)               # trailing column lost
+    assert not _rows_in_lines([["Level", "7", "7", "7"], ["Rolling", "10", "10", "9"]], "Level 7 7 7 40 50\nRolling 10 10 9 30 40")  # neighbour table

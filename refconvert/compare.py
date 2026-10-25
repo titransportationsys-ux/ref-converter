@@ -102,8 +102,9 @@ def _grid_diff(ga, gb) -> str:
 
 
 def _rows_in_lines(rows, text) -> bool:
-    """Independent structure check: each non-empty row's cells appear, in order, on ONE line of ``text``,
-    and the rows appear top-to-bottom. Wrapped (multi-line) cells fail this check on purpose."""
+    """Independent structure check: every non-empty row must equal, EXACTLY, one line of ``text``
+    (cells joined by single spaces, nothing before, between or after), and rows must appear top to bottom.
+    A dropped label column, a side-by-side neighbour, wrapped or merged cells all fail on purpose."""
     lines = [cmp_text(ln) for ln in text.split("\n")]
     ptr, seen = 0, 0
     for row in rows:
@@ -111,15 +112,9 @@ def _rows_in_lines(rows, text) -> bool:
         if not cells:
             continue
         seen += 1
+        target = " ".join(cells)
         for i in range(ptr, len(lines)):
-            pos, ok = 0, True
-            for c in cells:
-                k = lines[i].find(c, pos)
-                if k < 0:
-                    ok = False
-                    break
-                pos = k + len(c)
-            if ok:
+            if lines[i] == target:
                 ptr = i + 1
                 break
         else:
@@ -304,6 +299,14 @@ def build(engines, issues, resolutions):
                     f, r = book.add(code, "BLOCK", u, det, tid)
                     unit_flags.append(f)
                     chosen = _apply_table_res(r, cands, cands[0], merged_tables, tid, u)
+            if chosen is not None and getattr(chosen[0], "engine", "") == "human" and tx and consensus_text:
+                # a hand-typed table must still be made of numbers that are printed on the page
+                missing = _table_numbers(chosen[1].rows) - numbers(consensus_text)
+                if missing:
+                    f2, _ = book.add("TABLE_OVERRIDE_NUMBERS", "BLOCK", u,
+                                     f"table {tid} override contains numbers not found in the agreed page text: "
+                                     f"{', '.join(sorted(missing.elements())[:12])}. Fix the override (typo?) or waive with a note.", tid)
+                    unit_flags.append(f2)
             if chosen is not None and tid not in merged_tables:
                 e, b = chosen
                 merged_tables[tid] = Block(u, "table", rows=b.rows, tid=tid, meta={"engine": e.engine, **extra_meta})
